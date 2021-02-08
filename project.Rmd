@@ -1,0 +1,768 @@
+---
+title: The Correlation between Happiness Index and Suicide Rate in Western and Northern
+  European Countries
+---
+
+Bring library
+```{r}
+library(tidyverse)
+library(corrplot)
+library(shiny)
+library(maps)
+library(mapproj)
+library(shinydashboard)
+library(DT)
+library(PerformanceAnalytics)
+library(gridExtra)
+```
+
+Bring Data
+df_s is suicide data.
+df_h_1 is 2015 happiness data and df_h_2 is 2016 happiness data.
+```{r}
+df_s=read.csv("./data/suicide.csv",header = TRUE)
+df_h_1=read.csv("./data/happiness_2015.csv",header = TRUE)
+df_h_2=read.csv("./data/happiness_2016.csv",header = TRUE)
+```
+[Suicide data] pre-processing
+Duplicated years with happiness data are only 2015 and 2016, so filter data frame for these years.
+```{r}
+df_s = df_s %>% filter(year==2015|year==2016)
+```
+Change column names to easy one.
+```{r}
+names(df_s)=c('Country','Year','Sex','Age','Count_S','Population','S_Rate','CY','HDI','GDP_Year','GDP_Capita','Generation')
+```
+Select only meaningful columns,group by country and summarize by suicide rate.
+```{r}
+df_s = df_s %>% select('Country','Year','Sex','Age','Count_S','Population','S_Rate','GDP_Capita') %>% group_by(Country,Year) %>% summarise(Suicide_Rate=mean(S_Rate,na.rm = TRUE))
+```
+We got simple df_s now.
+
+Separate df_s by year because df_s is combined 2015 data and 2016 data.
+```{r}
+df_s1 = df_s %>% filter(Year==2015)
+df_s2 = df_s %>% filter(Year==2016)
+```
+df_s1 is suicide data for 2015, df_s2 is suicide data for 2016.
+
+[Happiness data] pre-processing
+Change column names to easy one.
+```{r}
+names(df_h_1)=c('Country','Region','H_Rank','H_Score','S_Error','GDP_Capita','Family','H_Expect','Freedom','Trust_G','Generosity','Dystopia_R')
+names(df_h_2)=c('Country','Region','H_Rank','H_Score','L_confidence','U_confidence','GDP_Capita','Family','H_Expect','Freedom','Trust_G','Generosity','Dystopia_R')
+```
+Select only meaningful columns.
+```{r}
+df_h_1 = df_h_1 %>% select('Country','Region','H_Rank','H_Score','GDP_Capita','Family','H_Expect','Freedom','Trust_G','Generosity','Dystopia_R')
+df_h_2 = df_h_2 %>% select('Country','Region','H_Rank','H_Score','GDP_Capita','Family','H_Expect','Freedom','Trust_G','Generosity','Dystopia_R')
+```
+
+[Merge happiness data with suicide data per year]
+If there's no suicide data, this data won't be considered and disappeared.
+df1 is 2015 data and df2 is 2016 data.
+```{r}
+df1=merge(df_h_1,df_s1,by=c('Country'))
+df2=merge(df_h_2,df_s2,by=c('Country'))
+```
+Restrict the countries to Western country only.
+refer to.These data combined Western Europe and Northern Europe to just Western Europe and I will keep this name.
+```{r}
+df1 = df1 %>% filter(Region=='Western Europe')
+df2 = df2 %>% filter(Region=='Western Europe')
+```
+Now we will check basic information of df1 and df2.
+```{r}
+summary(df1)
+summary(df2)
+```
+We wanted to use 2016 data but the sample of 2016 data is not enough for analyze and we will ignore them.
+
+Also,when we check country of df1 there's not proper country : Cyprus and Malta
+```{r}
+df1$Country
+```
+Take them off from df1
+```{r}
+df1 = df1[!(df1$Country == "Cyprus"|df1$Country == "Malta"), ]
+```
+
+-----------Basic Data processing is over-----------
+
+[2015] Check relation between happiness index and suicide rate
+```{r}
+attach(df1)
+cor.test(H_Score,Suicide_Rate)
+```
+The value of p-value is 0.004882 and correlation coefficient is 0.684457.
+
+Dot plots
+```{r}
+p=ggplot(df1,aes(x=H_Score,y=Suicide_Rate,fill=Country)) + geom_point(aes(color=Country))+ ggtitle("The relevance between Happiness index and Suicide rate") +xlab("Happiness")
+p
+```
+Histogram
+```{r}
+p1=ggplot(df1, aes(x=H_Score))+geom_histogram(fill='pink',colour="black", bins = 20)+scale_x_continuous(breaks = c(5,6,7,8))
+p2=ggplot(df1, aes(x=Suicide_Rate))+geom_histogram(fill='blue',colour="black", bins = 20)+scale_x_continuous(breaks = c(8,12,16))
+
+grid.arrange(p1,p2,nrow=1)
+```
+
+With these numbers and graph, we can figure it out there's positive correlation between happiness and suicide rate in Western and Northern European countries.
+But why? How come this relevance is showed?
+
+To check this relevance, let's draw the correlation matrix plot of df1.
+Select the number columns. (or we can't use corrplot)
+```{r}
+c_df1 = df1 %>% select('H_Score','GDP_Capita','Family','H_Expect','Freedom','Trust_G','Generosity','Dystopia_R','Suicide_Rate')
+corrplot(cor(c_df1),method='number')
+```
+When we see the this plot, we can check the element of Freedom has high correlation with both Suicide Rate and Happiness.
+By this fact, I suppose the elements about freedom lead to the relevance of Suicide Rate and Happiness.
+
+To prove this correlation, I will use 'df' data frame who has only three columns 'H_Score','Freedom','Suicide_Rate'.
+```{r}
+df = df1 %>% select('Country','H_Score','Freedom','Suicide_Rate')
+```
+
+First hypothetical factor of freedom is working hour.
+I get this data on 'work'.
+I restrict these data to 2015 year and choose only Location(Country code) and Value(Working hour) columns.
+After that, change these columns names properly.
+```{r}
+work=read.csv("./data/work.csv",header=TRUE)
+work = work %>% subset(TIME==2015,select = c('LOCATION','Value'))
+names(work)=c('code','Working_hour')
+work
+```
+I want to merge work with df now but there's no Country name on work df.
+To add country name according to country code, we need a data frame who relates country name with country code.
+```{r}
+c_code=read.csv("./data/c_code.csv",header = TRUE)
+c_code = c_code %>% select('English.short.name.lower.case','Alpha.3.code')
+names(c_code)=c('Country','code')
+```
+Merge c_code and work and delete country code column what we don't need.
+```{r}
+work=merge(c_code,work)
+work=work[-1]
+```
+Merge this work_h and df and check working hour's correlation with df columns.
+```{r}
+work_h=merge(df,work,by='Country')
+work_h
+```
+Check relation between freedom index and working hour.
+```{r}
+attach(work_h)
+plot(Freedom~Working_hour)
+cor.test(Freedom,Working_hour)
+```
+The p-value is 1.219e-05 and correlation coefficient is -0.92948 .
+
+What about with Happiness and Suicide rate?
+Select the number columns. (or we can't use corrplot)
+```{r}
+c_work_h=work_h[,-1]
+corrplot(cor(c_work_h),method='number')
+```
+It means working hour and (freedom,happiness score,suicide rate) have negative correlation and it can be a proof of that working time is a factor of freedom and working time effects to the  correlation between happiness and suicide rate.
+
+This time, we will consider elements who can be related with freedom.
+'Civil justice','Rule of law','Religious freedom','Freedom to associate and assemble with peaceful individuals or organizations','Freedom of expression','Identity'.
+
+We bring the data,filter it (2015 year data), select the columns we are interested in and change these name clearly.
+```{r}
+freedom=read.csv("./data/hfi_cc_2018.csv",header=TRUE)
+freedom = freedom %>% subset(year==2015,select = c('countries','pf_rol_civil','pf_rol','pf_religion','pf_association','pf_expression','pf_identity'))
+names(freedom)=c('Country','Civil_justice','Rule','Religion','Association','Expression','Identity')
+head(freedom)
+```
+Merge this freedom and df.
+```{r}
+freedom=merge(df,freedom,by='Country')
+freedom
+```
+Unfortunately, There's NA value on civil justice and we will skip this column.
+```{r}
+freedom=freedom[,-5]
+freedom
+```
+Check there's correlation with df columns and the other elements.
+Select the number columns. (or we can't use corrplot)
+```{r}
+c_df=freedom[,-1]
+corrplot(cor(c_df),method='number')
+```
+Among five factors, Rule,Expression and Identity have significant correlation with freedom and also have positive with Happiness and Suicide rate. It can be a proof of that these three factors are related with freedom and effect to the correlation between happiness and suicide rate.
+
+What about the factor who is not related with freedom? It will have same correlation with Happiness index and Suicide?
+
+[Weather]
+Bring data and select the columns what we are interested in.
+Change column names clearly.
+```{r}
+weather=read.csv("./data/weather.csv",header=TRUE)
+weather = weather %>% select('country','avg_temp')
+names(weather)=c('Country','Avg_temp')
+```
+Merge weather data with df(happiness,suicide and freedom)
+```{r}
+weather=merge(df,weather,by='Country')
+weather
+```
+Check there's correlation with df columns and the weather.
+Select the number columns. (or we can't use corrplot)
+```{r}
+c_weather=weather[,-1]
+corrplot(cor(c_weather),method='number')
+```
+It means weather(average temperature) and (freedom,happiness score,suicide rate) have negative correlation and it can be a proof of that weather(average temperature) effects the correlation between happiness and suicide rate.
+
+[Close Relationship ratio]
+Bring data and select the columns what we are interested in.
+Change column names clearly.
+```{r}
+close_relations=read.csv("./data/close_relations_2015.csv",header=TRUE)
+names(close_relations)=c('Country','Close_Relations')
+close_relations
+```
+Merge relationships data with df(happiness,suicide and freedom)
+```{r}
+relations=merge(df,close_relations,by='Country')
+relations
+```
+Check there's correlation with df columns and the relationship.
+Select the number columns. (or we can't use corrplot)
+```{r}
+c_relations=relations[,-1]
+corrplot(cor(c_relations),method='number')
+```
+The correlation coefficient of close relationship with happiness,Suicide rate, and freedom is smaller than 0.3. It means we can't find any correlation between them. By this verification, we can know if something has no correlation with happiness, the correlation with suicide does not exist and it's a proof of the relevance of happiness index and suicide rate.
+
+[Unemployment rate]
+Bring data and select the columns what we are interested in.
+Change column names clearly.
+```{r}
+unemployment=read.csv("./data/unemployment.csv",header=TRUE)
+unemployment = unemployment %>% select('LOCATION','Value')
+names(unemployment)=c('code','Unemployment_Rate')
+unemployment
+```
+I want to merge unemployment with df directly but there's no Country name on unemployment df.
+To add country name according to country code, we will use c_code df again what we used before.
+```{r}
+unemployment=merge(c_code,unemployment,by='code')
+unemployment
+```
+Delete country code column because we don't need anymore.
+```{r}
+unemployment=unemployment[,-1]
+unemployment
+```
+Merge unemployment data with df(happiness,suicide and freedom)
+```{r}
+unemployment=merge(df,unemployment,by='Country')
+unemployment
+```
+Check there's correlation with df columns and the unemployment.
+Select the number columns. (or we can't use corrplot)
+```{r}
+c_unemployment=unemployment[,-1]
+corrplot(cor(c_unemployment),method='number')
+```
+It means unemployment rate and (freedom,happiness score,suicide rate) have negative correlation and it can be a proof of that unemployment rate effects the correlation between happiness and suicide rate.
+
+[Conclusion]
+Many factors of our life have significant relevance with happiness index and suicide rate and effect their correlation.
+
+-----------Analysis is over-----------
+
+[Map]
+I want to show a map who contains the information.
+For that, we will make a map of Europe first.
+Brings map info and restrict it to European countries.
+```{r}
+world=map_data(map = 'world', region = '.')
+
+europe=map_data(map='world',region=c("Austria","Belgium","Bulgaria","Croatia","Cyprus",
+                   "Czech Rep.","Denmark","Estonia","Finland","France",
+                   "Germany","Greece","Hungary","Iceland","Ireland","Italy","Latvia",
+                   "Lithuania","Luxembourg","Malta","Netherlands","Norway","Poland",
+                   "Portugal","Romania","Slovakia","Slovenia","Spain",
+                   "Sweden","Switzerland","UK"))
+```
+To merge map info with df, we will change somethings.
+Change df's country column to region.
+Change United Kingdom name to UK because it is stored by 'UK' in map info.
+```{r}
+colnames(df)[1]='region'
+df$region=gsub("United Kingdom", "UK", df$region)
+```
+Right join df and europe(map) by region.
+I do right join to draw complete map although there is no data on df.
+```{r}
+europeMap=right_join(df,europe,by='region')
+europeMap=europeMap[order(europeMap$region,europeMap$order),]
+europeMap
+```
+ps. I made my theme for drawing a map more interesting.
+```{r}
+my_theme <- theme(panel.background = element_blank(),
+                  axis.title = element_blank(),
+                  axis.text = element_blank(),
+                  axis.ticks = element_blank(),
+                  plot.title = element_text(hjust = 0.5,
+                                            face = 'bold'))
+```
+
+Let's make a dashboard about this analysis. 
+First of all, organize data frame to use on dashboard.
+```{r}
+happiness = df1 %>% select('Country','H_Score')
+suicide = df1 %>% select('Country','Suicide_Rate')
+c_free=freedom %>% select('H_Score','Suicide_Rate','Freedom')
+work_h = work_h %>% select(Country,Working_hour)
+freedom = freedom %>% select(Country,H_Score,Suicide_Rate,Rule,Expression,Identity)
+free=merge(work_h,freedom)
+cc_weather=c_weather %>% select(H_Score,Suicide_Rate,Avg_temp)
+cc_unemployment=c_unemployment %>% select (H_Score,Suicide_Rate,Unemployment_Rate)
+e=europeMap%>%group_by(region,H_Score,Suicide_Rate) %>% summarize(lat=mean(lat),long=mean(long))
+```
+
+-----------Shiny-----------
+
+[ui for shiny]
+```{r}
+#radioButtons option
+check_list=c('Happiness index','Suicide rate','Freedom')
+freedom_factor=c('Working hour','Rule of law','Freedom of expression','Identity')
+
+ui = dashboardPage(
+  
+  dashboardHeader(title="The Relevance between Happiness and Suicide", titleWidth = 450),
+  
+  #menage sidebar
+  dashboardSidebar(
+    sidebarMenu(
+    menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+    menuItem("Freedom", tabName = "freedom", icon = icon("th")),
+    menuItem("Weather", tabName = "weather", icon = icon("th")),
+    menuItem("Unemployment", tabName = "unemployment", icon = icon("th"))
+  )
+  ),
+  
+  dashboardBody(
+    #control sidebar font size
+    tags$head( 
+    tags$style(HTML(".main-sidebar { font-size: 20px; }"))
+    ),
+    tabItems(
+      # First tab content
+      tabItem(
+        #relate with sidebarMenu by tabName
+        tabName = "dashboard",
+        #To show the dashboard properly at first, we need to make a tap active
+        class='active',
+        #title
+        h2("The Correlation between Happiness Index and Suicide Rate in Western and Northern European Countries"),
+        # First fluidRow
+        fluidRow(
+          # box1
+          box(
+          title='Map of Europe',
+          status = 'primary',
+          solidHeader = TRUE,
+          collapsible = TRUE,
+          # bring a plot named 'bubble map'
+          plotOutput('bubble_map')
+          ),
+          # box2
+          box(
+          title='Correlation between happiness and suicide',
+          status = 'primary',
+          solidHeader = TRUE,
+          collapsible = TRUE,
+          # bring a plot named 'dot'
+          plotOutput('dot')
+          )
+        ),
+        # Second fluidRow
+        fluidRow(
+          # box1
+          box(
+            title='Happiness Index higtogram',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #there is reactive slider for histogram bins size and the result of this choice will be reflected on server
+            #range is from 10 to 30 and default value is 30
+            #the choice will be stored on slider1
+            sliderInput("slider1", "histogram bins size:", 10, 30, 30),
+            # bring a plot named 'h_hist'
+            plotOutput('h_hist')
+          ),
+          # box2
+          box(
+            title='Suicide rate histogram',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #there is reactive slider for histogram bins size and the result of this choice will be reflected on server
+            #range is from 10 to 30 and default value is 30
+            #the choice will be stored on slider2
+            sliderInput("slider2", "histogram bins size:", 10, 30, 30),
+            # bring a plot named 's_hist'
+            plotOutput('s_hist')
+          )
+        ),
+        # Third fluidRow
+        fluidRow(
+          # box1
+          box(
+            title='Happiness Index data table',
+            status = 'primary',
+            #bring a data table 'happiness'
+            DT::dataTableOutput("happiness")
+          ),
+          # box2
+          box(
+            title='Suicide rate data table',
+            status = 'primary',
+            # bring a data table 'suicide'
+            DT::dataTableOutput("suicide")
+          )
+        )
+      ),
+
+      # Second tab content
+      tabItem(
+        #relate with sidebarMenu by tabName
+        tabName = "freedom",
+        #title
+        h2("Correlation of freedom with happiness index and suicide rate"),
+        # first fluidRox
+        fluidRow(
+          # box1
+          box(
+            title='Correlation Analysis',
+            status = 'primary',
+            #explanation of histogram 
+            '[Happiness Index~Freedom] Correlation Coefficient: 0.96',
+            br(),
+            '[Suicide Rate~Freedom] Correlation Coefficient: 0.72',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            # bring a plot named 'f_cor'
+            plotOutput('f_cor')
+          ),
+          # box2
+          box(
+            title='Compare by country',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #there are reactive buttons what user can choose and the result of this choice will be reflected on server
+            #the choice will be stored on select
+            radioButtons("select", "Which factor you want to compare?", check_list),
+            #bring a plot named 'map'
+            plotOutput('map')
+          )
+        ),
+        # Second fluidRox
+        fluidRow(
+          # box1
+          box(
+            title='Elements related with Freedom',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #there are reactive buttons what user can choose and the result of this choice will be reflected on server
+            #the choice will be stored on ff
+            radioButtons("ff", "Which freedom factor you want to check?", freedom_factor)
+          ),
+          # box2
+          box(
+            #bring a plot named 'ff1'
+            plotOutput('ff1'),
+            #bring a plot named 'ff2'
+            plotOutput('ff2')
+          )
+        )
+      ),
+      # Third tab content
+      tabItem(
+        #relate with sidebarMenu by tabName
+        tabName = "weather",
+        #title
+        h2("What about the factor who is not related with freedom? It will have same correlation with Happiness index and Suicide?: Weather"),
+        # First fluidRow
+        fluidRow(
+          # box1
+          box(
+            title='Average temperature higtogram',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #bring a plot named 'w_hist'
+            plotOutput('w_hist')
+          ),
+          # box2
+          box(
+            title='Average temperature correlation analysis',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #plot explanation
+            'Temperature and (happiness score,suicide rate) have negative correlation',
+            #bring a plot named 'w_cor'
+            plotOutput('w_cor')
+          )
+        ),
+        # Second fluidRow
+        fluidRow(
+          # box1
+          box(
+            title='Average temperature and Happiness index bar graph',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #bring a plot named 'w_bar_h'
+            plotOutput('w_bar_h')
+          ),
+          box(
+            title='Average temperature and Suicide Rate bar graph',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #bring a plot named 'w_bar_s'
+            plotOutput('w_bar_s')
+          )
+        )
+      ),
+      # Fourth tab content
+      tabItem(
+        #relate with sidebarMenu by tabName
+        tabName = "unemployment",
+        #title
+        h2("What about the factor who is not related with freedom? It will have same correlation with Happiness index and Suicide?: Unemployement"),
+        # First fluidRow
+        fluidRow(
+          # box1
+          box(
+            title='Unemployment rate higtogram',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #bring a plot named 'u_hist'
+            plotOutput('u_hist')
+          ),
+          # box2
+          box(
+            title='Unemployment rate correlation analysis',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #plot explanation
+            'Unemployment and (happiness score,suicide rate) have negative correlation',
+            #bring a plot named 'u_cor'
+            plotOutput('u_cor')
+          )
+        ),
+        # Second fluidRow
+        fluidRow(
+          # box1
+          box(
+            title='Unemployment rate and Happiness index bar graph',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #bring a plot named 'u_bar_h'
+            plotOutput('u_bar_h')
+          ),
+          # box2
+          box(
+            title='Unemployment rate and Suicide Rate bar graph',
+            status = 'primary',
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            #bring a plot named u_bar_h
+            plotOutput('u_bar_s')
+          )
+        )
+      )
+    )
+  )
+)
+```
+
+server for shiny
+```{r}
+server = function(input, output) { 
+  #select what ui gets from user as a input
+  #choice is changed depends on select
+  #if select is happiness index, europeMap$H_Socre will be stored at choice
+  choice = reactive({
+    switch(input$select,
+           'Happiness index' = europeMap$H_Score,
+           'Suicide rate' = europeMap$Suicide_Rate,
+           'Freedom' = europeMap$Freedom)
+  })
+  
+  #ff what ui gets from user as a input
+  #factor is changed depends on ff
+  #if ff is Working hour, free$Working_hour will be stored at factor
+  factor = reactive({
+    switch(input$ff,
+           'Working hour'=free$Working_hour,
+           'Rule of law'=free$Rule,
+           'Freedom of expression'=free$Expression,
+           'Identity'=free$Identity
+    )
+  })
+  
+  #plot named bubble_map
+  #return a ggplot on the place that bubble_map was called
+  output$bubble_map=renderPlot({
+    #on the map, draw bubbles
+    #size is changed by H_Score(happiness index)
+    #color is changed by Suicide_Rate
+    ggplot() +
+    geom_polygon(data = europeMap, aes(x=long, y = lat, group = group), fill="grey", alpha=0.3) +
+    geom_point( data=e, aes(x=long, y=lat, size=H_Score, colour=Suicide_Rate))
+  })
+  
+  #plot named dot
+  #return a ggplot on the place that dot was called
+  output$dot=renderPlot({
+    ggplot(df1,aes(x=H_Score,y=Suicide_Rate,fill=Country)) +
+    geom_point(aes(color=Country),size=4)+xlab("Happiness index")+ylab("Suicide rate")
+  })
+  
+  #plot named h_hist
+  #return a ggplot on the place that h_hist was called
+  output$h_hist=renderPlot({
+    ggplot(happiness, aes(x=H_Score)) +   
+    geom_histogram(fill='blue',  colour="black", bins = input$slider1)+xlab("Happiness index")
+  })
+  
+  #plot named s_hist
+  #return a ggplot on the place that s_hist was called
+  output$s_hist=renderPlot({
+    ggplot(suicide, aes(x=Suicide_Rate)) +   
+    geom_histogram(fill='orange',  colour="black", bins = input$slider2)+xlab("Suicide rate")
+  })
+  
+  #data table named happiness
+  #return a data table on the place that happiness was called
+  output$happiness = DT::renderDataTable({
+    happiness
+  })
+  
+  #data table named bubble_map
+  #return a data table on the place that suicide was called
+  output$suicide = DT::renderDataTable({
+    suicide
+  })
+  
+  #plot named f_cor
+  #return a correlation chart on the place that f_cor was called
+  output$f_cor=renderPlot({
+    chart.Correlation(c_free, histogram=TRUE, pch=19)
+  })
+  
+  #plot named map
+  #return a ggplot on the place that map was called
+  #this time the input$selct&choice will be reflected when gglot is drawed
+  output$map=renderPlot({
+    #draw europeMap
+    ggplot(europeMap,mapping = aes(x = long,y = lat,group = group))+
+    #modulated the map balance
+    coord_map() + 
+    #the color of county is changed depends on choice's value
+    geom_polygon(mapping = aes(fill = choice()),colour = 'gray30')+
+    #apply my_them on ggplot
+    my_theme +
+    #title
+    ggtitle(label = input$select) +
+    #chose extra things
+    scale_fill_gradient(low='black',high='pink')+theme(legend.position = c(0.9, 0.1),legend.text = element_text(size = 8, face = 'bold'),legend.title = element_text(size = 10, face = 'bold'))
+  })
+  
+  #plot named ff1
+  #return a ggplot on the place that ff1 was called
+  output$ff1=renderPlot({
+    ggplot(free,aes(x=H_Score,y=factor()))+
+    geom_line(stat='identity',color='blue')+xlab("Happiness index")+ylab(input$ff)
+  })
+  
+  #plot named ff2
+  #return a ggplot on the place that ff2 was called
+  output$ff2=renderPlot({
+    ggplot(free,aes(x=Suicide_Rate,y=factor()))+
+      geom_line(stat='identity',color='orange')+xlab("Suicide rate")+ylab(input$ff)
+  })
+  
+  #plot named w_hist
+  #return a ggplot on the place that w_hist was called
+  output$w_hist=renderPlot({
+    ggplot(c_weather, aes(x=Avg_temp)) +   
+    geom_histogram(fill='pink',  colour="black", bins = 30)+xlab("Average temperature")
+  })
+  
+  #plot named w_cor
+  #return a correlation plot on the place that w_cor was called
+  output$w_cor=renderPlot({
+    corrplot(cor(cc_weather),method='number')
+  })
+  
+  #plot named w_bar_h
+  #return a ggplot on the place that w_bar_h was called
+  output$w_bar_h=renderPlot({
+    ggplot(cc_weather,aes(x=Avg_temp,y=H_Score))+
+      geom_bar(stat='identity',color='blue')+xlab("Average temperature")+ylab("Happiness index")
+  })
+  
+  #plot named w_bar_s
+  #return a ggplot on the place that w_bar_s was called
+  output$w_bar_s=renderPlot({
+    ggplot(cc_weather,aes(x=Avg_temp,y=Suicide_Rate))+
+      geom_bar(stat='identity',color='orange')+xlab("Average temperature")+ylab("Suicide rate")
+  })
+  
+  #plot named u_hist
+  #return a ggplot on the place that u_hist was called
+  output$u_hist=renderPlot({
+    ggplot(cc_unemployment, aes(x=Unemployment_Rate)) +   
+    geom_histogram(fill='pink',  colour="black", bins = 30)+xlab("Unemployment rate")
+  })
+  
+  #plot named u_cor
+  #return a correlation plot on the place that u_cor was called
+  output$u_cor=renderPlot({
+    corrplot(cor(cc_unemployment),method='number')
+  })
+  
+  #plot named u_bar_h
+  #return a ggplot on the place that u_bar_h was called
+  output$u_bar_h=renderPlot({
+    ggplot(cc_unemployment,aes(x=Unemployment_Rate,y=H_Score))+
+      geom_bar(stat='identity',color='blue')+xlab("Unemployment rate")+ylab("Happiness index")
+  })
+  
+  #plot named u_bar_s
+  #return a ggplot on the place that u_bar_s was called
+  output$u_bar_s=renderPlot({
+    ggplot(cc_unemployment,aes(x=Unemployment_Rate,y=Suicide_Rate))+
+      geom_bar(stat='identity',color='orange')+xlab("Unemployment rate")+ylab("Suicide Rate")
+  })
+}
+
+```
+Run shiny with ui and server
+```{r}
+shinyApp(ui,server)
+```
+
+
